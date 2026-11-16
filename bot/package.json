@@ -1,0 +1,15 @@
+{
+  "name": "blockblast-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plays Block Blast on an Android phone over ADB using the shared solver",
+  "main": "bot.js",
+  "scripts": {
+    "shot": "node bot.js shot",
+    "dry": "node bot.js dry",
+    "play": "node bot.js play"
+  },
+  "dependencies": {
+    "pngjs": "7.0.0"
+  }
+}

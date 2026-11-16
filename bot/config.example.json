@@ -1,0 +1,13 @@
+{
+  "screen": { "width": 1080, "height": 2400 },
+  "grid": { "x": 54, "y": 648, "w": 972, "h": 972 },
+  "tray": { "x": 32, "y": 1680, "w": 1016, "h": 324 },
+  "adb": "adb",
+  "device": "",
+  "liftCells": 2.0,
+  "offsetX": 0,
+  "swipeMode": "swipe",
+  "swipeMs": 450,
+  "afterMoveMs": 900,
+  "autoCorrect": true
+}

@@ -1,0 +1,576 @@
+<title>Подсказчик Block Blast</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;700;800&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow column, like a phone game screen: board → pieces → hint boards → screenshot tools. */
+:root {
+  --bg: #0b1026;          /* night-blue game backdrop */
+  --panel: #141b3d;       /* raised panel */
+  --cell: #1c2550;        /* empty cell */
+  --cell-line: #26306a;
+  --block: #6a7cc9;       /* placed block */
+  --fg: #eef1ff;
+  --muted: #9aa3d1;
+  --m1: #ffa94d;          /* move 1 */
+  --m2: #4fd1e8;          /* move 2 */
+  --m3: #c38bff;          /* move 3 */
+  --clear: #fff27a;       /* cleared line flash */
+  --warn: #ff7a8a;
+  --font-display: "Rubik", "Trebuchet MS", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 48px;
+}
+.wrap { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+h1, h2 { font-family: var(--font-display); margin: 0; text-wrap: balance; }
+h1 { font-size: 26px; font-weight: 800; letter-spacing: 0.01em; }
+h2 { font-size: 17px; font-weight: 700; }
+header { display: flex; flex-direction: column; gap: 6px; }
+.status { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 10px; border-radius: 999px; background: var(--panel); color: var(--muted); font-variant-numeric: tabular-nums; }
+.chip b { color: var(--fg); }
+.chip.hot { background: color-mix(in srgb, var(--m1) 22%, var(--panel)); color: var(--m1); }
+.hint-text { color: var(--muted); font-size: 13px; margin: 0; }
+section { display: flex; flex-direction: column; gap: 10px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row.between { justify-content: space-between; }
+
+/* Board */
+.board { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; padding: 6px; background: #070a1a; border-radius: 10px; aspect-ratio: 1; width: 100%; max-width: 100%; touch-action: manipulation; }
+.board button { border: 0; padding: 0; border-radius: 4px; background: var(--cell); box-shadow: inset 0 0 0 1px var(--cell-line); cursor: pointer; }
+.board button.on { background: var(--block); box-shadow: inset 0 -3px 0 rgba(0,0,0,.25), inset 0 2px 0 rgba(255,255,255,.18); }
+.board button:focus-visible { outline: 2px solid var(--clear); outline-offset: 1px; }
+
+/* Pieces */
+.slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.slot { background: var(--panel); border: 2px dashed var(--cell-line); border-radius: 12px; min-height: 104px; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 10px 6px; position: relative; }
+.slot.filled { border-style: solid; border-color: transparent; }
+.slot:focus-visible { outline: 2px solid var(--clear); }
+.slot .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+.slot .x { position: absolute; top: 4px; right: 6px; font-size: 16px; color: var(--muted); padding: 2px 6px; }
+.shape { display: inline-grid; gap: 2px; }
+.shape i { width: var(--s, 14px); height: var(--s, 14px); border-radius: 3px; background: transparent; display: block; }
+.shape i.on { background: var(--block); box-shadow: inset 0 -2px 0 rgba(0,0,0,.25); }
+
+/* Buttons */
+button.btn { font: 600 14px var(--font-body); border: 0; border-radius: 10px; padding: 11px 16px; cursor: pointer; background: var(--panel); color: var(--fg); }
+button.btn.primary { background: var(--m1); color: #1d1205; }
+button.btn:disabled { opacity: .4; cursor: default; }
+button.btn:focus-visible { outline: 2px solid var(--clear); outline-offset: 2px; }
+
+/* Hint */
+.hint { background: var(--panel); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.step { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.step .mini { display: grid; grid-template-columns: repeat(8, 1fr); gap: 1px; aspect-ratio: 1; background: #070a1a; padding: 3px; border-radius: 6px; }
+.step .mini i { border-radius: 2px; background: var(--cell); }
+.step .mini i.on { background: var(--block); opacity: .75; }
+.step .mini i.p { background: var(--mc); opacity: 1; }
+.step .mini i.clr { box-shadow: 0 0 0 1.5px var(--clear) inset; }
+.step .cap { font-size: 12px; line-height: 1.35; color: var(--muted); }
+.step .cap b { color: var(--mc); font-family: var(--font-display); font-size: 14px; display: block; }
+.warn { color: var(--warn); font-size: 13px; margin: 0; }
+.empty-hint { color: var(--muted); font-size: 14px; margin: 0; }
+
+/* Sheet */
+.sheet-bg { position: fixed; inset: 0; background: rgba(3,5,15,.7); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--panel); width: 100%; max-width: 560px; max-height: 82vh; overflow-y: auto; border-radius: 18px 18px 0 0; padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; }
+.palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; }
+.palette button { background: var(--bg); border: 0; border-radius: 10px; min-height: 72px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 8px; }
+.palette button:focus-visible { outline: 2px solid var(--clear); }
+.editor { display: grid; grid-template-columns: repeat(5, 40px); gap: 4px; }
+.editor button { width: 40px; height: 40px; border: 0; border-radius: 6px; background: var(--cell); cursor: pointer; }
+.editor button.on { background: var(--block); }
+
+/* Screenshot */
+details { background: var(--panel); border-radius: 14px; padding: 12px 14px; }
+summary { font-family: var(--font-display); font-weight: 700; font-size: 17px; cursor: pointer; }
+details[open] summary { margin-bottom: 10px; }
+.shot { display: flex; flex-direction: column; gap: 10px; }
+canvas#shot { width: 100%; max-width: 100%; border-radius: 8px; touch-action: none; background: #070a1a; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; background: var(--c); vertical-align: -1px; }
+pre { background: #070a1a; padding: 10px; border-radius: 8px; overflow-x: auto; font-size: 12px; margin: 0; }
+ol { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+input[type=file] { color: var(--muted); max-width: 100%; }
+@media (prefers-reduced-motion: no-preference) { .board button { transition: background-color .12s; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Подсказчик Block Blast</h1>
+    <div class="status">
+      <span class="chip" id="chipCombo">Комбо <b>0</b></span>
+      <span class="chip" id="chipLines">Линий <b>0</b></span>
+      <span class="chip" id="chipExample" hidden>Пример — замените на своё поле</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="row between">
+      <h2>Поле</h2>
+      <span class="hint-text">Нажимайте на клетки, чтобы отметить занятые</span>
+    </div>
+    <div class="board" id="board" role="grid" aria-label="Игровое поле 8 на 8"></div>
+    <div class="row">
+      <button class="btn" id="btnUndo" type="button">↶ Отменить</button>
+      <button class="btn" id="btnClear" type="button">Очистить поле</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="row between">
+      <h2>Фигуры этого хода</h2>
+      <span class="hint-text">Как они лежат внизу экрана</span>
+    </div>
+    <div class="slots" id="slots"></div>
+  </section>
+
+  <section class="hint" id="hint" aria-live="polite"></section>
+
+  <details id="shotBox">
+    <summary>Распознать скриншот</summary>
+    <div class="shot">
+      <ol>
+        <li>Сделайте скриншот в игре и выберите его ниже (или вставьте из буфера).</li>
+        <li>Один раз подгоните рамки: <b style="color:var(--m1)">оранжевую</b> точно по полю 8×8, <b style="color:var(--m2)">голубую</b> по зоне с тремя фигурами. Тяните за углы или за середину. Рамки запоминаются.</li>
+        <li>Нажмите «Распознать». Ошибки можно поправить нажатием на клетки.</li>
+      </ol>
+      <input type="file" id="file" accept="image/*">
+      <canvas id="shot" width="600" height="300" hidden></canvas>
+      <div class="legend" id="legend" hidden><span style="--c:var(--m1)">поле</span><span style="--c:var(--m2)">фигуры</span><span style="--c:var(--clear)">найденные фигуры</span></div>
+      <div class="row">
+        <button class="btn primary" id="btnDetect" type="button" disabled>Распознать</button>
+        <button class="btn" id="btnCopyCfg" type="button" disabled>Копировать настройки для бота</button>
+      </div>
+      <p class="hint-text" id="detectMsg"></p>
+      <pre id="cfgOut" hidden></pre>
+    </div>
+  </details>
+</div>
+
+<div class="sheet-bg" id="sheetBg" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="row between">
+      <h2 id="sheetTitle">Выберите фигуру</h2>
+      <button class="btn" id="btnSheetClose" type="button">Закрыть</button>
+    </div>
+    <div class="palette" id="palette"></div>
+    <h2>Или нарисуйте свою</h2>
+    <div class="editor" id="editor"></div>
+    <div class="row"><button class="btn primary" id="btnEditorOk" type="button">Готово</button></div>
+  </div>
+</div>
+
+<script src="solver.js"></script>
+<script src="detect.js"></script>
+<script>
+(function () {
+  'use strict';
+  const S = window.BlockSolver, D = window.BlockDetect;
+  const SLOT_NAMES = ['Левая', 'Средняя', 'Правая'];
+  const SLOT_ACC = ['Левую', 'Среднюю', 'Правую'];
+  const MOVE_COLORS = ['var(--m1)', 'var(--m2)', 'var(--m3)'];
+  const $ = (id) => document.getElementById(id);
+
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  };
+
+  // Example position shown on first visit.
+  function exampleState() {
+    const rows = [
+      '........',
+      '........',
+      'XX......',
+      'XXX...XX',
+      'XXXX.XXX',
+      'XXXXX.XX',
+      'XXX.XXXX',
+      'XXXXXX.X',
+    ];
+    return {
+      board: rows.join('').split('').map((ch) => (ch === 'X' ? 1 : 0)),
+      pieces: [S.parseShape('XX/XX'), S.parseShape('X/X'), S.parseShape('XXX/X..')],
+      game: { combo: 0, since: 0, lines: 0 },
+      example: true,
+    };
+  }
+
+  let state = store.get('bb-state', null) || exampleState();
+  let history = [];
+  let result = null;
+
+  function save() { store.set('bb-state', state); }
+  function snapshot() { history.push(JSON.stringify(state)); if (history.length > 50) history.shift(); }
+  function touched() { if (state.example) { state.example = false; } }
+
+  // ---------- rendering ----------
+  function shapeEl(cells, size) {
+    const [h, w] = S.dims(cells);
+    const el = document.createElement('span');
+    el.className = 'shape';
+    el.style.gridTemplateColumns = `repeat(${w}, var(--s))`;
+    el.style.setProperty('--s', size + 'px');
+    const set = new Set(cells.map(([r, c]) => r + ',' + c));
+    for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+      const i = document.createElement('i');
+      if (set.has(r + ',' + c)) i.className = 'on';
+      el.appendChild(i);
+    }
+    return el;
+  }
+
+  const boardEl = $('board');
+  for (let i = 0; i < 64; i++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', `ряд ${Math.floor(i / 8) + 1}, колонка ${(i % 8) + 1}`);
+    b.addEventListener('click', () => { snapshot(); touched(); state.board[i] = state.board[i] ? 0 : 1; update(); });
+    boardEl.appendChild(b);
+  }
+
+  function renderBoard() {
+    [...boardEl.children].forEach((b, i) => {
+      b.classList.toggle('on', !!state.board[i]);
+      b.setAttribute('aria-pressed', state.board[i] ? 'true' : 'false');
+    });
+    $('chipCombo').innerHTML = `Комбо <b>${state.game.combo}</b>`;
+    $('chipCombo').classList.toggle('hot', state.game.combo > 0);
+    $('chipLines').innerHTML = `Линий <b>${state.game.lines}</b>`;
+    $('chipExample').hidden = !state.example;
+  }
+
+  function renderSlots() {
+    const box = $('slots');
+    box.innerHTML = '';
+    state.pieces.forEach((p, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'slot' + (p ? ' filled' : '');
+      const lbl = document.createElement('span');
+      lbl.className = 'lbl'; lbl.textContent = SLOT_NAMES[i];
+      if (p) {
+        b.appendChild(shapeEl(p, 14));
+        b.appendChild(lbl);
+        const x = document.createElement('span');
+        x.className = 'x'; x.textContent = '×'; x.setAttribute('aria-label', 'Убрать фигуру');
+        x.addEventListener('click', (e) => { e.stopPropagation(); snapshot(); touched(); state.pieces[i] = null; update(); });
+        b.appendChild(x);
+      } else {
+        const t = document.createElement('span'); t.textContent = '+ выбрать';
+        b.appendChild(t); b.appendChild(lbl);
+      }
+      b.addEventListener('click', () => openSheet(i));
+      box.appendChild(b);
+    });
+  }
+
+  function renderHint() {
+    const el = $('hint');
+    el.innerHTML = '';
+    const h = document.createElement('h2');
+    h.textContent = 'Лучшие ходы';
+    el.appendChild(h);
+    if (!state.pieces.some(Boolean)) {
+      const p = document.createElement('p'); p.className = 'empty-hint';
+      p.textContent = 'Выберите фигуры, которые выпали внизу, и здесь появится порядок ходов.';
+      el.appendChild(p);
+      return;
+    }
+    if (!result || !result.moves.length) {
+      const p = document.createElement('p'); p.className = 'warn';
+      p.textContent = 'Ни одна фигура не помещается на поле. Проверьте, правильно ли отмечены клетки.';
+      el.appendChild(p);
+      return;
+    }
+    if (!result.placedAll) {
+      const p = document.createElement('p'); p.className = 'warn';
+      p.textContent = 'Все фигуры сразу не помещаются, игра скорее всего закончится. Вот лучшее из возможного:';
+      el.appendChild(p);
+    }
+    const steps = document.createElement('div');
+    steps.className = 'steps';
+    result.moves.forEach((m, k) => {
+      const st = document.createElement('div');
+      st.className = 'step';
+      st.style.setProperty('--mc', MOVE_COLORS[k]);
+      const mini = document.createElement('div'); mini.className = 'mini';
+      const pc = new Set(m.cells.map(([r, c]) => r * 8 + c));
+      const clr = new Set(m.clearedCells);
+      for (let i = 0; i < 64; i++) {
+        const cell = document.createElement('i');
+        if (pc.has(i)) cell.className = 'p';
+        else if (m.boardBefore[i]) cell.className = 'on';
+        if (clr.has(i)) cell.classList.add('clr');
+        mini.appendChild(cell);
+      }
+      const cap = document.createElement('div'); cap.className = 'cap';
+      const b = document.createElement('b'); b.textContent = `${k + 1}. ${SLOT_ACC[m.piece]}`;
+      cap.appendChild(b);
+      cap.appendChild(document.createTextNode(`ряд ${m.r + 1}, кол. ${m.c + 1}` + (m.lines ? ` · +${m.lines} ${m.lines === 1 ? 'линия' : 'линии'}` : '')));
+      st.appendChild(mini); st.appendChild(cap);
+      steps.appendChild(st);
+    });
+    el.appendChild(steps);
+    const row = document.createElement('div'); row.className = 'row';
+    const ok = document.createElement('button');
+    ok.type = 'button'; ok.className = 'btn primary';
+    ok.textContent = 'Я сделал эти ходы → следующий раунд';
+    ok.addEventListener('click', applyMoves);
+    row.appendChild(ok);
+    el.appendChild(row);
+    const tip = document.createElement('p'); tip.className = 'hint-text';
+    tip.textContent = 'Ставьте фигуры строго в этом порядке. Жёлтая обводка — линии, которые исчезнут.';
+    el.appendChild(tip);
+  }
+
+  function solveNow() {
+    if (!state.pieces.some(Boolean)) { result = null; return; }
+    result = S.solve(state.board, state.pieces, { state: { combo: state.game.combo, since: state.game.since } });
+  }
+
+  function update() { solveNow(); renderBoard(); renderSlots(); renderHint(); save(); }
+
+  function applyMoves() {
+    if (!result || !result.moves.length) return;
+    snapshot(); touched();
+    state.board = result.moves[result.moves.length - 1].boardAfter.slice();
+    state.game = { combo: result.state.combo, since: result.state.since, lines: state.game.lines + result.lines };
+    state.pieces = [null, null, null];
+    update();
+    $('slots').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  $('btnUndo').addEventListener('click', () => { if (history.length) { state = JSON.parse(history.pop()); update(); } });
+  $('btnClear').addEventListener('click', () => {
+    snapshot(); touched();
+    state.board = new Array(64).fill(0); state.game = { combo: 0, since: 0, lines: 0 }; state.pieces = [null, null, null];
+    update();
+  });
+
+  // ---------- piece sheet ----------
+  let sheetSlot = 0;
+  let editorCells = new Set();
+  const palette = $('palette');
+  S.SHAPES.forEach((cells) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Фигура из ' + cells.length + ' клеток');
+    b.appendChild(shapeEl(cells, 11));
+    b.addEventListener('click', () => { setPiece(cells); });
+    palette.appendChild(b);
+  });
+  const editor = $('editor');
+  for (let i = 0; i < 25; i++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', 'клетка');
+    b.addEventListener('click', () => { editorCells.has(i) ? editorCells.delete(i) : editorCells.add(i); b.classList.toggle('on'); });
+    editor.appendChild(b);
+  }
+  function openSheet(i) {
+    sheetSlot = i;
+    $('sheetTitle').textContent = `${SLOT_NAMES[i]} фигура`;
+    editorCells = new Set();
+    [...editor.children].forEach((b) => b.classList.remove('on'));
+    $('sheetBg').hidden = false;
+  }
+  function closeSheet() { $('sheetBg').hidden = true; }
+  function setPiece(cells) {
+    snapshot(); touched();
+    state.pieces[sheetSlot] = S.normalize(cells);
+    closeSheet();
+    // Jump to the next empty slot to make entering three pieces quick.
+    const next = state.pieces.findIndex((p) => !p);
+    update();
+    if (next >= 0) openSheet(next);
+  }
+  $('btnSheetClose').addEventListener('click', closeSheet);
+  $('sheetBg').addEventListener('click', (e) => { if (e.target === $('sheetBg')) closeSheet(); });
+  $('btnEditorOk').addEventListener('click', () => {
+    if (!editorCells.size) return;
+    setPiece([...editorCells].map((i) => [Math.floor(i / 5), i % 5]));
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
+
+  // ---------- screenshot ----------
+  const canvas = $('shot');
+  const ctx = canvas.getContext('2d');
+  let img = null, imgData = null, calib = null, found = null;
+
+  function defaultCalib(w, h) {
+    const gw = w * 0.9;
+    const grid = { x: w * 0.05, y: h * 0.27, w: gw, h: gw };
+    const tray = { x: w * 0.03, y: grid.y + grid.h + w * 0.06, w: w * 0.94, h: w * 0.3 };
+    return { grid, tray };
+  }
+  function loadImage(src) {
+    const im = new Image();
+    im.onload = () => {
+      img = im;
+      canvas.width = im.naturalWidth; canvas.height = im.naturalHeight;
+      ctx.drawImage(im, 0, 0);
+      imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      calib = store.get('bb-calib-' + canvas.width + 'x' + canvas.height, null) || defaultCalib(canvas.width, canvas.height);
+      found = null;
+      canvas.hidden = false; $('legend').hidden = false;
+      $('btnDetect').disabled = false; $('btnCopyCfg').disabled = false;
+      $('detectMsg').textContent = '';
+      draw();
+    };
+    im.src = src;
+  }
+  $('file').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => loadImage(r.result);
+    r.readAsDataURL(f);
+  });
+  document.addEventListener('paste', (e) => {
+    const item = [...(e.clipboardData ? e.clipboardData.items : [])].find((it) => it.type.startsWith('image/'));
+    if (!item) return;
+    $('shotBox').open = true;
+    const r = new FileReader();
+    r.onload = () => loadImage(r.result);
+    r.readAsDataURL(item.getAsFile());
+  });
+
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function draw() {
+    if (!img) return;
+    ctx.drawImage(img, 0, 0);
+    const lw = Math.max(2, canvas.width / 300);
+    const hs = handleSize();
+    [['grid', cssVar('--m1')], ['tray', cssVar('--m2')]].forEach(([k, col]) => {
+      const r = calib[k];
+      ctx.strokeStyle = col; ctx.lineWidth = lw;
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+      if (k === 'grid') {
+        ctx.globalAlpha = 0.5; ctx.lineWidth = lw / 2;
+        for (let i = 1; i < 8; i++) {
+          ctx.beginPath(); ctx.moveTo(r.x + (r.w * i) / 8, r.y); ctx.lineTo(r.x + (r.w * i) / 8, r.y + r.h); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(r.x, r.y + (r.h * i) / 8); ctx.lineTo(r.x + r.w, r.y + (r.h * i) / 8); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.globalAlpha = 0.5; ctx.lineWidth = lw / 2;
+        for (let i = 1; i < 3; i++) { ctx.beginPath(); ctx.moveTo(r.x + (r.w * i) / 3, r.y); ctx.lineTo(r.x + (r.w * i) / 3, r.y + r.h); ctx.stroke(); }
+        ctx.globalAlpha = 1;
+      }
+      ctx.fillStyle = col;
+      [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]].forEach(([x, y]) => {
+        ctx.beginPath(); ctx.arc(x, y, hs * 0.45, 0, Math.PI * 2); ctx.fill();
+      });
+    });
+    if (found) {
+      ctx.strokeStyle = cssVar('--clear'); ctx.lineWidth = lw;
+      found.slots.forEach((s) => { if (s) ctx.strokeRect(s.x, s.y, s.w, s.h); });
+    }
+  }
+  function handleSize() { return Math.max(24, canvas.width / 18); }
+
+  let drag = null;
+  function toImg(e) {
+    const r = canvas.getBoundingClientRect();
+    return [(e.clientX - r.left) * (canvas.width / r.width), (e.clientY - r.top) * (canvas.height / r.height)];
+  }
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!calib) return;
+    const [x, y] = toImg(e);
+    const hs = handleSize();
+    let best = null;
+    for (const k of ['grid', 'tray']) {
+      const r = calib[k];
+      const corners = { tl: [r.x, r.y], tr: [r.x + r.w, r.y], bl: [r.x, r.y + r.h], br: [r.x + r.w, r.y + r.h] };
+      for (const [name, [cx, cy]] of Object.entries(corners)) {
+        const d = Math.hypot(cx - x, cy - y);
+        if (d < hs && (!best || d < best.d)) best = { k, mode: name, d };
+      }
+    }
+    if (!best) {
+      for (const k of ['grid', 'tray']) {
+        const r = calib[k];
+        if (x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h) { best = { k, mode: 'move' }; break; }
+      }
+    }
+    if (!best) return;
+    drag = { ...best, x, y, orig: { ...calib[best.k] } };
+    canvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const [x, y] = toImg(e);
+    const dx = x - drag.x, dy = y - drag.y, o = drag.orig;
+    const r = { ...o };
+    if (drag.mode === 'move') { r.x = o.x + dx; r.y = o.y + dy; }
+    else {
+      if (drag.mode.includes('l')) { r.x = o.x + dx; r.w = o.w - dx; }
+      if (drag.mode.includes('r')) { r.w = o.w + dx; }
+      if (drag.mode.includes('t')) { r.y = o.y + dy; r.h = o.h - dy; }
+      if (drag.mode.includes('b')) { r.h = o.h + dy; }
+      if (r.w < 20) r.w = 20; if (r.h < 20) r.h = 20;
+    }
+    calib[drag.k] = r;
+    delete calib.trayCellRatio;
+    draw();
+  });
+  const endDrag = () => {
+    if (!drag) return;
+    drag = null;
+    store.set('bb-calib-' + canvas.width + 'x' + canvas.height, calib);
+  };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
+  function matchShape(cells) {
+    const key = S.shapeKey(cells);
+    return S.SHAPES.find((s) => S.shapeKey(s) === key) || S.normalize(cells);
+  }
+  $('btnDetect').addEventListener('click', () => {
+    if (!imgData) return;
+    found = D.detect(imgData, calib);
+    // Remember the tray cell size from a screenshot with all three pieces (one piece alone is ambiguous).
+    if (!calib.trayCellRatio && found.pieces.filter(Boolean).length === 3 && found.trayCellSize) {
+      calib.trayCellRatio = found.trayCellSize / (calib.grid.w / 8);
+      store.set('bb-calib-' + canvas.width + 'x' + canvas.height, calib);
+    }
+    snapshot(); touched();
+    state.board = found.board;
+    state.pieces = found.pieces.map((p) => (p ? matchShape(p) : null));
+    draw();
+    update();
+    const n = state.pieces.filter(Boolean).length;
+    $('detectMsg').textContent = `Найдено занятых клеток: ${found.board.filter(Boolean).length}, фигур: ${n}. Сверьте с игрой и поправьте, если нужно.`;
+    $('board').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  $('btnCopyCfg').addEventListener('click', () => {
+    if (!calib) return;
+    const round = (r) => ({ x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) });
+    const cfg = JSON.stringify({ screen: { width: canvas.width, height: canvas.height }, grid: round(calib.grid), tray: round(calib.tray), ...(calib.trayCellRatio ? { trayCellRatio: +calib.trayCellRatio.toFixed(3) } : {}) }, null, 2);
+    const out = $('cfgOut');
+    out.textContent = cfg; out.hidden = false;
+    try {
+      navigator.clipboard.writeText(cfg).then(
+        () => { $('detectMsg').textContent = 'Скопировано. Вставьте это в bot/config.json.'; },
+        () => { $('detectMsg').textContent = 'Скопируйте текст ниже в bot/config.json.'; selectPre(out); }
+      );
+    } catch (e) { selectPre(out); }
+  });
+  function selectPre(el) { const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+
+  update();
+})();
+</script>
