@@ -136,6 +136,30 @@ input[type=file] { color: var(--muted); max-width: 100%; }
 
   <section class="hint" id="hint" aria-live="polite"></section>
 
+  <details id="iosBox">
+    <summary>iPhone: подсказка по двойному касанию</summary>
+    <div class="shot">
+      <p class="hint-text">В игре дважды коснитесь задней крышки iPhone, и через секунду поверх игры появится её экран с нарисованными ходами. Скриншоты делать не нужно. Настройка займёт минут 5, делается один раз. Откройте эту страницу на самом iPhone.</p>
+      <ol>
+        <li>Установите бесплатное приложение <b>Scriptable</b> из App Store.</li>
+        <li>Нажмите «Скопировать скрипт». В Scriptable нажмите «+», вставьте текст, сверху переименуйте скрипт в <b>BlockBlast</b> и нажмите «Done».</li>
+        <li>Один раз настройте рамки: сделайте скриншот игры, загрузите его в разделе «Распознать скриншот» ниже, подгоните рамки и нажмите «Копировать настройки». Потом запустите BlockBlast в Scriptable: он сохранит настройки и покажет пробную подсказку.</li>
+        <li>В приложении «Команды» создайте команду из трёх действий:
+          <b>Снимок экрана</b> →
+          <b>Run Script</b> (Scriptable): Script — BlockBlast, в поле Images — «Снимок экрана», Run In App — выкл. →
+          <b>Быстрый просмотр</b>.
+          Назовите команду «Подсказка BB».</li>
+        <li>Настройки → Универсальный доступ → Касание → Касание задней панели → Двойное касание → «Подсказка BB».</li>
+        <li>Играйте: двойное касание задней крышки → смотрите ходы → «Готово» → ставьте фигуры.</li>
+      </ol>
+      <div class="row">
+        <button class="btn primary" id="btnCopyScript" type="button">Скопировать скрипт</button>
+      </div>
+      <p class="hint-text" id="scriptMsg"></p>
+      <textarea id="scriptOut" rows="4" readonly hidden style="width:100%;background:#070a1a;color:var(--muted);border:0;border-radius:8px;padding:8px;font-size:11px"></textarea>
+    </div>
+  </details>
+
   <details id="shotBox">
     <summary>Распознать скриншот</summary>
     <div class="shot">
@@ -149,7 +173,7 @@ input[type=file] { color: var(--muted); max-width: 100%; }
       <div class="legend" id="legend" hidden><span style="--c:var(--m1)">поле</span><span style="--c:var(--m2)">фигуры</span><span style="--c:var(--clear)">найденные фигуры</span></div>
       <div class="row">
         <button class="btn primary" id="btnDetect" type="button" disabled>Распознать</button>
-        <button class="btn" id="btnCopyCfg" type="button" disabled>Копировать настройки для бота</button>
+        <button class="btn" id="btnCopyCfg" type="button" disabled>Копировать настройки</button>
       </div>
       <p class="hint-text" id="detectMsg"></p>
       <pre id="cfgOut" hidden></pre>
@@ -564,12 +588,27 @@ input[type=file] { color: var(--muted); max-width: 100%; }
     out.textContent = cfg; out.hidden = false;
     try {
       navigator.clipboard.writeText(cfg).then(
-        () => { $('detectMsg').textContent = 'Скопировано. Вставьте это в bot/config.json.'; },
-        () => { $('detectMsg').textContent = 'Скопируйте текст ниже в bot/config.json.'; selectPre(out); }
+        () => { $('detectMsg').textContent = 'Скопировано. iPhone: теперь запустите BlockBlast в Scriptable. Android-бот: вставьте в bot/config.json.'; },
+        () => { $('detectMsg').textContent = 'Скопируйте текст ниже вручную.'; selectPre(out); }
       );
     } catch (e) { selectPre(out); }
   });
   function selectPre(el) { const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+
+  // ---------- iPhone script ----------
+  let scriptText = null;
+  fetch('ios/BlockBlast.js').then((r) => (r.ok ? r.text() : Promise.reject())).then((t) => { scriptText = t; }, () => {});
+  $('btnCopyScript').addEventListener('click', () => {
+    const msg = $('scriptMsg'), out = $('scriptOut');
+    if (!scriptText) { msg.textContent = 'Скрипт ещё загружается, нажмите через секунду.'; return; }
+    const fallback = () => {
+      out.hidden = false; out.value = scriptText; out.focus(); out.select();
+      msg.textContent = 'Выделите весь текст в поле ниже и скопируйте его.';
+    };
+    try {
+      navigator.clipboard.writeText(scriptText).then(() => { msg.textContent = 'Скрипт скопирован. Вставьте его в Scriptable.'; }, fallback);
+    } catch (e) { fallback(); }
+  });
 
   update();
 })();
